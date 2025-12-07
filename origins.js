@@ -36,6 +36,10 @@
     // Batch Ethnicity API (for compare pages)
     const BATCH_ETHNICITY_API_URL = (baseId) => `${BASE_ORIGIN}/dna/origins/secure/compare/${baseId}/batchEthnicity`;
     
+    // External API URLs
+    const JOURNEY_NAMES_URL = 'https://admixr.com/ancestry/ancestry_journey_names.json';
+    const REGION_NAMES_URL = 'https://admixr.com/ancestry/ancestry_region_names.json';
+    
     // Utility: Extract compare IDs from URL
     function extractCompareIds() {
         // URL pattern: /discoveryui-matches/compare/{id1}/with/{id2}(/ethnicity)?
@@ -362,7 +366,7 @@
             const regionData = await new Promise((resolve, reject) => {
                 GM_xmlhttpRequest({
                     method: 'GET',
-                    url: 'https://admixr.com/ancestry/ancestry_region_names.json',
+                    url: REGION_NAMES_URL,
                     onload: (response) => {
                         if (response.status === 200) {
                             try {
@@ -456,7 +460,7 @@
                 const namesData = await new Promise((resolve, reject) => {
                     GM_xmlhttpRequest({
                         method: 'GET',
-                        url: 'https://admixr.com/ancestry/ancestry_journey_names.json',
+                        url: JOURNEY_NAMES_URL,
                         onload: (response) => {
                             if (response.status === 200) {
                                 try {
@@ -491,7 +495,7 @@
                 const regionData = await new Promise((resolve, reject) => {
                     GM_xmlhttpRequest({
                         method: 'GET',
-                        url: 'https://admixr.com/ancestry/ancestry_region_names.json',
+                        url: REGION_NAMES_URL,
                         onload: (response) => {
                             if (response.status === 200) {
                                 try {
