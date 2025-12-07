@@ -398,8 +398,9 @@
     async function generateSummaryTable() {
         try {
             const testId = extractTestId();
-            const data = await fetchEthnicityData(testId);
             
+            // Fetch original ethnicity data
+            const data = await fetchEthnicityData(testId);
             const regions = Array.isArray(data.regions) ? data.regions : [];
             const regionKeys = Array.from(new Set(regions.map(r => r.key)));
             const macroRegionKeys = Array.from(new Set(regions.map(r => r.macroRegionKey)));
@@ -409,8 +410,15 @@
             const macroGroups = groupRegionsByMacro(regions);
             const macroTotals = calculateMacroTotals(macroGroups);
             
-            // Build table HTML
-            let html = `<table style=\"border-collapse:collapse; font-size:13px; background:#fff; margin-top:6px; width:auto;\">
+            // Fetch branches data
+            const branchesUrl = `${BASE_ORIGIN}/dna/origins/secure/tests/${testId}/branches`;
+            const branchesResponse = await fetch(branchesUrl, { credentials: 'include' });
+            if (!branchesResponse.ok) throw new Error(`Branches API HTTP ${branchesResponse.status}: ${branchesResponse.statusText}`);
+            const branchesData = await branchesResponse.json();
+            
+            // Build original table HTML
+            let html = `<h3 style="margin-top:0; margin-bottom:10px;">Ethnicity Data</h3>
+                <table style=\"border-collapse:collapse; font-size:13px; background:#fff; margin-top:6px; width:auto;\">
                 <thead><tr>
                     <th style=\"border:1px solid #ccc; padding:3px 8px;\">Macro-Region</th>
                     <th style=\"border:1px solid #ccc; padding:3px 8px;\">Total %</th>
@@ -419,9 +427,9 @@
                     <th style=\"border:1px solid #ccc; padding:3px 8px;\"><a href=\"${CONFIDENCE_RANGE_HELP_URL}\" target=\"_blank\" style=\"color:#1a0dab; text-decoration:none; display:inline;\" title=\"About confidence ranges\">${ICONS.info}<\/a> Range<\/th>
                 <\/tr><\/thead><tbody>`;
                 
-            for (const { macroKey, regions, macroTotal } of macroTotals) {
+            for (const { macroKey, regions: macroRegions, macroTotal } of macroTotals) {
                 const macroName = namesMap[macroKey] || macroKey;
-                const sortedRegions = sortRegions(regions);
+                const sortedRegions = sortRegions(macroRegions);
                 
                 let firstRow = true;
                 for (const region of sortedRegions) {
@@ -430,8 +438,8 @@
                     
                     html += '<tr>';
                     if (firstRow) {
-                        html += `<td style="border:1px solid #ccc; padding:3px 8px; font-weight:bold; background:#f7f7e6;" rowspan="${regions.length}">${macroName}</td>`;
-                        html += `<td style="border:1px solid #ccc; padding:3px 8px; font-weight:bold; background:#f7f7e6; text-align:right;" rowspan="${regions.length}">${Math.round(macroTotal)}%</td>`;
+                        html += `<td style="border:1px solid #ccc; padding:3px 8px; font-weight:bold; background:#f7f7e6;" rowspan="${macroRegions.length}">${macroName}</td>`;
+                        html += `<td style="border:1px solid #ccc; padding:3px 8px; font-weight:bold; background:#f7f7e6; text-align:right;" rowspan="${macroRegions.length}">${Math.round(macroTotal)}%</td>`;
                         firstRow = false;
                     }
                     html += `<td style="border:1px solid #ccc; padding:3px 8px;"><a href="${regionUrl}" target="_blank" style="color:#1a0dab;"><strong>${regionName}</strong></a></td>`;
@@ -441,6 +449,37 @@
                 }
             }
             html += '</tbody></table>';
+            
+            // Add branches table
+            html += `<h3 style="margin-top:20px; margin-bottom:10px;">Branches Data</h3>
+                <table style=\"border-collapse:collapse; font-size:13px; background:#fff; margin-top:6px; width:auto;\">
+                <thead><tr>
+                    <th style=\"border:1px solid #ccc; padding:3px 8px;\">ID</th>
+                    <th style=\"border:1px solid #ccc; padding:3px 8px;\">Connection</th>
+                    <th style=\"border:1px solid #ccc; padding:3px 8px;\">Percentage</th>
+                <\/tr><\/thead><tbody>`;
+                
+            for (const branch of branchesData) {
+                // Main branch
+                html += '<tr>';
+                html += `<td style="border:1px solid #ccc; padding:3px 8px;">${branch.id}</td>`;
+                html += `<td style="border:1px solid #ccc; padding:3px 8px;">${branch.connection}</td>`;
+                html += `<td style="border:1px solid #ccc; padding:3px 8px; text-align:right;">${branch.connectionPercent}%</td>`;
+                html += '</tr>';
+                
+                // Communities
+                if (branch.communities && branch.communities.length > 0) {
+                    for (const community of branch.communities) {
+                        html += '<tr>';
+                        html += `<td style="border:1px solid #ccc; padding:3px 8px; padding-left:20px;">${community.id}</td>`;
+                        html += `<td style="border:1px solid #ccc; padding:3px 8px;">${community.connection}</td>`;
+                        html += `<td style="border:1px solid #ccc; padding:3px 8px; text-align:right;">${community.connectionPercent}%</td>`;
+                        html += '</tr>';
+                    }
+                }
+            }
+            html += '</tbody></table>';
+            
             return html;
         } catch (err) {
             return `<strong>OriginsHelper:</strong> Error: ${err.message}`;
