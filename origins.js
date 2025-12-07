@@ -28,7 +28,6 @@
     // Constants
     const BASE_ORIGIN = window.location.origin;
     const ETHNICITY_API_URL = (testId) => `${BASE_ORIGIN}/dna/origins/secure/tests/${testId}/v2/ethnicity`;
-    const NAMES_API_URL = `${BASE_ORIGIN}/dna/origins/public/ethnicity/2025/names`;
     const HTML2CANVAS_CDN = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
     // Added: Useful external links as constants
     const CONFIDENCE_RANGE_HELP_URL = `${BASE_ORIGIN}/cs/dna-help/ethnicity/bootstrapping`;
@@ -359,13 +358,41 @@
     }
 
     async function fetchRegionNames(keys) {
-        const response = await fetch(NAMES_API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(keys)
-        });
-        if (!response.ok) throw new Error(`Names API HTTP ${response.status}: ${response.statusText}`);
-        return response.json();
+        try {
+            const regionData = await new Promise((resolve, reject) => {
+                GM_xmlhttpRequest({
+                    method: 'GET',
+                    url: 'https://admixr.com/ancestry/ancestry_region_names.json',
+                    onload: (response) => {
+                        if (response.status === 200) {
+                            try {
+                                resolve(JSON.parse(response.responseText));
+                            } catch (e) {
+                                reject(new Error('Invalid JSON response'));
+                            }
+                        } else {
+                            reject(new Error(`HTTP ${response.status}`));
+                        }
+                    },
+                    onerror: () => reject(new Error('Network error'))
+                });
+            });
+
+            // Create a map of region code to name
+            const namesMap = {};
+            if (regionData.items && Array.isArray(regionData.items)) {
+                for (const item of regionData.items) {
+                    namesMap[item.region] = item.name;
+                }
+            }
+            return namesMap;
+        } catch (err) {
+            console.warn('OriginsHelper: Failed to fetch region names from admixr:', err.message, '- falling back to keys');
+            // Fallback: return a map where key maps to itself
+            const fallbackMap = {};
+            keys.forEach(key => fallbackMap[key] = key);
+            return fallbackMap;
+        }
     }
 
     // Origins Table Functions (for individual ethnicity pages only)  
@@ -386,6 +413,13 @@
                 return { macroKey, regions, macroTotal };
             })
             .sort((a, b) => b.macroTotal - a.macroTotal);
+    }
+
+    function formatMacroRegionName(name) {
+        return name
+            .split('_')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+            .join(' ');
     }
 
     function sortRegions(regions) {
@@ -451,6 +485,38 @@
                 console.warn('OriginsHelper: Failed to fetch journey names:', err.message, '- using IDs instead');
             }
             
+            // Fetch region names from admixr
+            let regionNamesMap = {};
+            try {
+                const regionData = await new Promise((resolve, reject) => {
+                    GM_xmlhttpRequest({
+                        method: 'GET',
+                        url: 'https://admixr.com/ancestry/ancestry_region_names.json',
+                        onload: (response) => {
+                            if (response.status === 200) {
+                                try {
+                                    resolve(JSON.parse(response.responseText));
+                                } catch (e) {
+                                    reject(new Error('Invalid JSON response'));
+                                }
+                            } else {
+                                reject(new Error(`HTTP ${response.status}`));
+                            }
+                        },
+                        onerror: () => reject(new Error('Network error'))
+                    });
+                });
+                
+                // Create a map of region code to name
+                if (regionData.items && Array.isArray(regionData.items)) {
+                    for (const item of regionData.items) {
+                        regionNamesMap[item.region] = item.name;
+                    }
+                }
+            } catch (err) {
+                console.warn('OriginsHelper: Failed to fetch region names:', err.message, '- using codes instead');
+            }
+            
             // Build original table HTML
             let html = `<h3 style="margin-top:0; margin-bottom:10px;">Ethnicity Data</h3>
                 <table style=\"border-collapse:collapse; font-size:13px; background:#fff; margin-top:6px; width:auto;\">
@@ -463,7 +529,7 @@
                 <\/tr><\/thead><tbody>`;
                 
             for (const { macroKey, regions: macroRegions, macroTotal } of macroTotals) {
-                const macroName = namesMap[macroKey] || macroKey;
+                const macroName = namesMap[macroKey] || formatMacroRegionName(macroKey);
                 const sortedRegions = sortRegions(macroRegions);
                 
                 let firstRow = true;
@@ -489,7 +555,7 @@
             html += `<h3 style="margin-top:20px; margin-bottom:10px;">Branches Data</h3>
                 <table style=\"border-collapse:collapse; font-size:13px; background:#fff; margin-top:6px; width:auto;\">
                 <thead><tr>
-                    <th style=\"border:1px solid #ccc; padding:3px 8px;\">ID</th>
+                    <th style=\"border:1px solid #ccc; padding:3px 8px;\">Journey</th>
                     <th style=\"border:1px solid #ccc; padding:3px 8px;\">Connection</th>
                     <th style=\"border:1px solid #ccc; padding:3px 8px;\">Percentage</th>
                 <\/tr><\/thead><tbody>`;
