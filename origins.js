@@ -7,7 +7,7 @@
 // @include      /^https:\/\/www\.ancestry\.[a-z.]+\/dna\/origins\/.*/
 // @include      /^https:\/\/www\.ancestry\.[a-z.]+\/discoveryui-matches\/compare\/.*\/with\/.*/
 // @license      CC BY-NC 4.0
-// @grant        none
+// @grant        GM_xmlhttpRequest
 // @run-at       document-end
 // @downloadURL https://update.greasyfork.org/scripts/552333/OriginsHelper.user.js
 // @updateURL https://update.greasyfork.org/scripts/552333/OriginsHelper.meta.js
@@ -416,6 +416,41 @@
             if (!branchesResponse.ok) throw new Error(`Branches API HTTP ${branchesResponse.status}: ${branchesResponse.statusText}`);
             const branchesData = await branchesResponse.json();
             
+            // Fetch journey names
+            let journeyNamesMap = {};
+            try {
+                const namesData = await new Promise((resolve, reject) => {
+                    GM_xmlhttpRequest({
+                        method: 'GET',
+                        url: 'https://admixr.com/ancestry/ancestry_journey_names.json',
+                        onload: (response) => {
+                            if (response.status === 200) {
+                                try {
+                                    resolve(JSON.parse(response.responseText));
+                                } catch (e) {
+                                    reject(new Error('Invalid JSON response'));
+                                }
+                            } else {
+                                reject(new Error(`HTTP ${response.status}`));
+                            }
+                        },
+                        onerror: () => reject(new Error('Network error'))
+                    });
+                });
+                
+                // Create a map of ID to name
+                for (const [key, value] of Object.entries(namesData)) {
+                    journeyNamesMap[key] = value.name;
+                    if (value.subjourneys) {
+                        for (const [subKey, subName] of Object.entries(value.subjourneys)) {
+                            journeyNamesMap[subKey] = subName;
+                        }
+                    }
+                }
+            } catch (err) {
+                console.warn('OriginsHelper: Failed to fetch journey names:', err.message, '- using IDs instead');
+            }
+            
             // Build original table HTML
             let html = `<h3 style="margin-top:0; margin-bottom:10px;">Ethnicity Data</h3>
                 <table style=\"border-collapse:collapse; font-size:13px; background:#fff; margin-top:6px; width:auto;\">
@@ -461,8 +496,9 @@
                 
             for (const branch of branchesData) {
                 // Main branch
+                const branchName = journeyNamesMap[branch.id] || branch.id;
                 html += '<tr>';
-                html += `<td style="border:1px solid #ccc; padding:3px 8px;">${branch.id}</td>`;
+                html += `<td style="border:1px solid #ccc; padding:3px 8px;">${branchName}</td>`;
                 html += `<td style="border:1px solid #ccc; padding:3px 8px;">${branch.connection}</td>`;
                 html += `<td style="border:1px solid #ccc; padding:3px 8px; text-align:right;">${branch.connectionPercent}%</td>`;
                 html += '</tr>';
@@ -470,8 +506,9 @@
                 // Communities
                 if (branch.communities && branch.communities.length > 0) {
                     for (const community of branch.communities) {
+                        const communityName = journeyNamesMap[community.id] || community.id;
                         html += '<tr>';
-                        html += `<td style="border:1px solid #ccc; padding:3px 8px; padding-left:20px;">${community.id}</td>`;
+                        html += `<td style="border:1px solid #ccc; padding:3px 8px; padding-left:20px;">${communityName}</td>`;
                         html += `<td style="border:1px solid #ccc; padding:3px 8px;">${community.connection}</td>`;
                         html += `<td style="border:1px solid #ccc; padding:3px 8px; text-align:right;">${community.connectionPercent}%</td>`;
                         html += '</tr>';
