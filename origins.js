@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OriginsHelper
 // @namespace    https://greasyfork.org/en/users/1525357-strike978
-// @version      0.3
+// @version      0.5
 // @description  Instantly toggle a grouped macro-region DNA ethnicity table with confidence ranges on Ancestry
 // @author       Omar Nunez
 // @include      /^https:\/\/www\.ancestry\.[a-z.]+\/dna\/origins\/.*/
@@ -28,7 +28,7 @@
     // Constants
     const BASE_ORIGIN = window.location.origin;
     const ETHNICITY_API_URL = (testId) => `${BASE_ORIGIN}/dna/origins/secure/tests/${testId}/v2/ethnicity`;
-    const HTML2CANVAS_CDN = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+    const HTML2CANVAS_CDN = 'https://html2canvas.hertzen.com/dist/html2canvas.min.js';
     // Added: Useful external links as constants
     const CONFIDENCE_RANGE_HELP_URL = `${BASE_ORIGIN}/cs/dna-help/ethnicity/bootstrapping`;
     const REGION_DETAILS_BASE_URL = `${BASE_ORIGIN}/dna/origins`;
@@ -522,7 +522,7 @@
             }
             
             // Build original table HTML
-            let html = `<h3 style="margin-top:0; margin-bottom:10px;">Ethnicity Data</h3>
+            let html = `<h3 style="margin-top:0; margin-bottom:10px;">Regions</h3>
                 <table style=\"border-collapse:collapse; font-size:13px; background:#fff; margin-top:6px; width:auto;\">
                 <thead><tr>
                     <th style=\"border:1px solid #ccc; padding:3px 8px;\">Macro-Region</th>
@@ -556,7 +556,7 @@
             html += '</tbody></table>';
             
             // Add branches table
-            html += `<h3 style="margin-top:20px; margin-bottom:10px;">Branches Data</h3>
+            html += `<h3 style="margin-top:20px; margin-bottom:10px;">Journeys</h3>
                 <table style=\"border-collapse:collapse; font-size:13px; background:#fff; margin-top:6px; width:auto;\">
                 <thead><tr>
                     <th style=\"border:1px solid #ccc; padding:3px 8px;\">Journey</th>
@@ -568,9 +568,9 @@
                 // Main branch
                 const branchName = journeyNamesMap[branch.id] || branch.id;
                 html += '<tr>';
-                html += `<td style="border:1px solid #ccc; padding:3px 8px;">${branchName}</td>`;
-                html += `<td style="border:1px solid #ccc; padding:3px 8px;">${branch.connection}</td>`;
-                html += `<td style="border:1px solid #ccc; padding:3px 8px; text-align:right;">${branch.connectionPercent}%</td>`;
+                html += `<td style="border:1px solid #ccc; padding:3px 8px; font-weight:bold; background:#f7f7e6;">${branchName}</td>`;
+                html += `<td style="border:1px solid #ccc; padding:3px 8px; font-weight:bold; background:#f7f7e6;">${branch.connection}</td>`;
+                html += `<td style="border:1px solid #ccc; padding:3px 8px; font-weight:bold; background:#f7f7e6; text-align:right;">${branch.connectionPercent}%</td>`;
                 html += '</tr>';
                 
                 // Communities
@@ -607,20 +607,79 @@
 
     async function loadHtml2Canvas() {
         if (!window.html2canvas) {
-            const script = document.createElement('script');
-            script.src = HTML2CANVAS_CDN;
-            document.head.appendChild(script);
-            await new Promise(r => { script.onload = r; });
+            console.log('OriginsHelper: Loading html2canvas...');
+            try {
+                const scriptContent = await new Promise((resolve, reject) => {
+                    GM_xmlhttpRequest({
+                        method: 'GET',
+                        url: HTML2CANVAS_CDN,
+                        onload: (response) => {
+                            if (response.status === 200) {
+                                resolve(response.responseText);
+                            } else {
+                                reject(new Error(`HTTP ${response.status}`));
+                            }
+                        },
+                        onerror: (error) => reject(error)
+                    });
+                });
+
+                // Execute the script in the page context
+                // Try eval first, then fallback to script injection
+                try {
+                    // eslint-disable-next-line no-eval
+                    eval(scriptContent);
+                } catch (evalErr) {
+                    console.warn('OriginsHelper: eval failed, trying script injection:', evalErr);
+                    const script = document.createElement('script');
+                    script.textContent = scriptContent;
+                    document.head.appendChild(script);
+                }
+
+                // Wait a bit for the script to initialize
+                await new Promise(resolve => setTimeout(resolve, 200));
+
+                if (!window.html2canvas) {
+                    throw new Error('html2canvas not available after loading');
+                }
+
+                console.log('OriginsHelper: html2canvas loaded successfully');
+            } catch (err) {
+                console.error('OriginsHelper: Failed to load html2canvas:', err);
+                throw err;
+            }
         }
     }
 
     async function takeScreenshot(targetEl) {
-        await loadHtml2Canvas();
-        window.html2canvas(targetEl, { backgroundColor: '#fff' }).then(canvas => {
-            const dataUrl = canvas.toDataURL('image/png');
-            const win = window.open();
-            win.document.write('<title>Screenshot</title><img src="' + dataUrl + '" style="max-width:100%;">');
-        });
+        try {
+            console.log('OriginsHelper: Starting screenshot process...');
+            await loadHtml2Canvas();
+            console.log('OriginsHelper: html2canvas loaded, capturing...');
+            
+            window.html2canvas(targetEl, { 
+                backgroundColor: '#fff',
+                useCORS: true,
+                allowTaint: true
+            }).then(canvas => {
+                console.log('OriginsHelper: Canvas created, opening window...');
+                const dataUrl = canvas.toDataURL('image/png');
+                const win = window.open('', '_blank');
+                if (win) {
+                    win.document.write('<title>Screenshot - OriginsHelper</title><img src="' + dataUrl + '" style="max-width:100%; height:auto;">');
+                    win.document.close();
+                } else {
+                    console.error('OriginsHelper: Failed to open screenshot window - popup blocked?');
+                    alert('Screenshot captured but popup was blocked. Please allow popups for this site.');
+                }
+            }).catch(err => {
+                console.error('OriginsHelper: html2canvas error:', err);
+                alert('Screenshot failed: ' + err.message);
+            });
+        } catch (err) {
+            console.error('OriginsHelper: Screenshot setup error:', err);
+            alert('Screenshot setup failed: ' + err.message);
+        }
     }
 
 
@@ -686,8 +745,7 @@
             
             if (!this.screenshotBtn) {
                 this.screenshotBtn = createScreenshotButton(() => {
-                    const table = this.tableDiv.querySelector('table');
-                    if (table) takeScreenshot(table);
+                    takeScreenshot(this.tableDiv);
                 });
                 toggleWrapper.appendChild(this.screenshotBtn);
             }
