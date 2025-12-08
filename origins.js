@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OriginsHelper
 // @namespace    https://greasyfork.org/en/users/1525357-strike978
-// @version      0.5
+// @version      0.6
 // @description  Instantly toggle a grouped macro-region DNA ethnicity table with confidence ranges on Ancestry
 // @author       Omar Nunez
 // @include      /^https:\/\/www\.ancestry\.[a-z.]+\/dna\/origins\/.*/
@@ -36,7 +36,8 @@
     // Batch Ethnicity API (for compare pages)
     const BATCH_ETHNICITY_API_URL = (baseId) => `${BASE_ORIGIN}/dna/origins/secure/compare/${baseId}/batchEthnicity`;
     
-    // External API URLs
+    // Batch Communities API (for compare pages)
+    const BATCH_COMMUNITIES_API_URL = (baseId) => `${BASE_ORIGIN}/dna/origins/secure/compare/${baseId}/batchCommunities`;
     const JOURNEY_NAMES_URL = 'https://admixr.com/ancestry/ancestry_journey_names.json';
     const REGION_NAMES_URL = 'https://admixr.com/ancestry/ancestry_region_names.json';
     
@@ -72,7 +73,7 @@
         // Create ranges button
         const rangesBtn = document.createElement('button');
         rangesBtn.setAttribute('data-origins-helper', 'ranges'); // Add tracking attribute
-        rangesBtn.innerHTML = ICONS.ranges + 'Show Confidence Ranges';
+        rangesBtn.innerHTML = ICONS.ranges + 'Show Journeys & Confidence Ranges';
         rangesBtn.style.cssText = 'padding:7px 16px; font-size:15px; font-weight:600; background:#2563eb; color:#fff; border:1.5px solid #1e40af; border-radius:6px; cursor:pointer; display:flex; align-items:center; transition:background 0.15s;';
         rangesBtn.onmouseover = () => { rangesBtn.style.background = '#1d4ed8'; };
         rangesBtn.onmouseout = () => { rangesBtn.style.background = rangesBtn.disabled ? '#6b7280' : '#2563eb'; };
@@ -96,11 +97,31 @@
                 
                 const batchData = await response.json();
                 
+                // Fetch communities data
+                const communitiesUrl = BATCH_COMMUNITIES_API_URL(ids.id1.toUpperCase());
+                const communitiesPayload = [ids.id2];
+                
+                const communitiesResponse = await fetch(communitiesUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify(communitiesPayload)
+                });
+                
+                if (!communitiesResponse.ok) {
+                    throw new Error(`Communities API HTTP ${communitiesResponse.status}: ${communitiesResponse.statusText}`);
+                }
+                
+                const communitiesData = await communitiesResponse.json();
+                
                 // Add confidence ranges to the page
                 await addConfidenceRangesToPageBatch(batchData, ids);
                 
+                // Add journeys data above the ethnicity data
+                await addJourneysToPage(communitiesData, ids);
+                
                 // Update button to success state
-                rangesBtn.innerHTML = ICONS.check + 'Ranges Visible';
+                rangesBtn.innerHTML = ICONS.check + 'Ranges & Journeys Visible';
                 rangesBtn.style.background = '#16a34a';
                 rangesBtn.onmouseout = () => { rangesBtn.style.background = '#16a34a'; };
             } catch (err) {
@@ -114,9 +135,11 @@
         
         // Create screenshot button
         const screenshotBtn = createScreenshotButton(() => {
-            // Find the grid element but exclude the buttons by targeting just the data
-            const compareData = document.querySelector('.compare-data');
-            if (compareData) takeScreenshot(compareData);
+            // Find the parent element that contains journeys, buttons, and data
+            const buttonWrapper = document.querySelector('[data-origins-helper="wrapper"]');
+            if (buttonWrapper && buttonWrapper.parentNode) {
+                takeScreenshot(buttonWrapper.parentNode);
+            }
         });
         screenshotBtn.style.marginLeft = '0'; // Remove default margin since we're using gap
         
@@ -312,6 +335,108 @@
             
         } catch (err) {
             console.error('Error adding confidence ranges:', err);
+        }
+    }
+    
+    // Add journeys data to the compare page
+    async function addJourneysToPage(communitiesData, ids) {
+        try {
+            console.log('OriginsHelper: Adding journeys data:', communitiesData);
+            // Fetch journey names
+            let journeyNamesMap = {};
+            try {
+                const namesData = await new Promise((resolve, reject) => {
+                    GM_xmlhttpRequest({
+                        method: 'GET',
+                        url: JOURNEY_NAMES_URL,
+                        onload: (response) => {
+                            if (response.status === 200) {
+                                try {
+                                    resolve(JSON.parse(response.responseText));
+                                } catch (e) {
+                                    reject(new Error('Invalid JSON response'));
+                                }
+                            } else {
+                                reject(new Error(`HTTP ${response.status}`));
+                            }
+                        },
+                        onerror: () => reject(new Error('Network error'))
+                    });
+                });
+                
+                // Create a map of ID to name
+                for (const [key, value] of Object.entries(namesData)) {
+                    journeyNamesMap[key] = value.name;
+                    if (value.subjourneys) {
+                        for (const [subKey, subName] of Object.entries(value.subjourneys)) {
+                            journeyNamesMap[subKey] = subName;
+                        }
+                    }
+                }
+            } catch (err) {
+                console.warn('OriginsHelper: Failed to fetch journey names:', err.message, '- using IDs instead');
+            }
+            
+            // Extract branches for the person (assuming the response has at least one person's data)
+            const personData = Object.values(communitiesData)[0];
+            if (!personData) {
+                console.error('OriginsHelper: No person data found in communities response');
+                return;
+            }
+            
+            const branches = personData.branches || [];
+            
+            // Build journeys table HTML
+            let html = `<h3 style="margin-top:0; margin-bottom:15px; color:#1f2937; font-size:18px; font-weight:600;">Ancestral journeys</h3>
+                <table style="border-collapse:collapse; font-size:14px; background:#fff; margin-top:6px; width:100%; border-radius:8px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+                <thead><tr>
+                    <th style="background:#2563eb; color:#fff; padding:10px 12px; font-weight:600; text-align:left; border-bottom:2px solid #1e40af;">Journey</th>
+                    <th style="background:#2563eb; color:#fff; padding:10px 12px; font-weight:600; text-align:left; border-bottom:2px solid #1e40af;">Connection</th>
+                    <th style="background:#2563eb; color:#fff; padding:10px 12px; font-weight:600; text-align:right; border-bottom:2px solid #1e40af;">Percentage</th>
+                </tr></thead><tbody>`;
+                
+            if (branches.length > 0) {
+                for (const branch of branches) {
+                    // Main branch
+                    const branchName = journeyNamesMap[branch.id] || branch.id;
+                    const connectionColor = branch.connection === 'VERY_LIKELY' ? '#16a34a' : branch.connection === 'LIKELY' ? '#2563eb' : '#ea580c';
+                    html += '<tr>';
+                    html += `<td style="padding:10px 12px; font-weight:600; background:#f0f9ff; border-bottom:1px solid #e5e7eb; color:#1f2937;">${branchName}</td>`;
+                    html += `<td style="padding:10px 12px; background:#f0f9ff; border-bottom:1px solid #e5e7eb;"><span style="display:inline-block; padding:2px 8px; background:${connectionColor}; color:#fff; border-radius:12px; font-size:12px; font-weight:500;">${branch.connection.replace('_', ' ')}</span></td>`;
+                    html += `<td style="padding:10px 12px; background:#f0f9ff; border-bottom:1px solid #e5e7eb; text-align:right; font-weight:600; color:#1f2937;">${branch.connectionPercent}%</td>`;
+                    html += '</tr>';
+                    
+                    // Communities
+                    if (branch.communities && branch.communities.length > 0) {
+                        for (const community of branch.communities) {
+                            const communityName = journeyNamesMap[community.id] || community.id;
+                            const communityConnectionColor = community.connection === 'VERY_LIKELY' ? '#16a34a' : community.connection === 'LIKELY' ? '#2563eb' : '#ea580c';
+                            html += '<tr>';
+                            html += `<td style="padding:8px 12px 8px 36px; background:#fafafa; border-bottom:1px solid #e5e7eb; color:#4b5563; font-style:italic;">└ ${communityName}</td>`;
+                            html += `<td style="padding:8px 12px; background:#fafafa; border-bottom:1px solid #e5e7eb;"><span style="display:inline-block; padding:1px 6px; background:${communityConnectionColor}; color:#fff; border-radius:10px; font-size:11px; font-weight:500;">${community.connection.replace('_', ' ')}</span></td>`;
+                            html += `<td style="padding:8px 12px; background:#fafafa; border-bottom:1px solid #e5e7eb; text-align:right; font-weight:500; color:#4b5563;">${community.connectionPercent}%</td>`;
+                            html += '</tr>';
+                        }
+                    }
+                }
+            } else {
+                html += '<tr><td colspan="3" style="padding:20px; text-align:center; color:#6b7280; font-style:italic; background:#f9fafb;">No journeys found</td></tr>';
+            }
+            html += '</tbody></table>';
+            
+            // Insert after the buttons, before the ethnicity data
+            const journeysDiv = document.createElement('div');
+            journeysDiv.innerHTML = html;
+            const buttonWrapper = document.querySelector('[data-origins-helper="wrapper"]');
+            if (buttonWrapper) {
+                buttonWrapper.parentNode.insertBefore(journeysDiv, buttonWrapper.nextSibling);
+                console.log('OriginsHelper: Journeys table inserted after buttons');
+            } else {
+                console.log('OriginsHelper: Button wrapper not found, cannot insert journeys');
+            }
+            
+        } catch (err) {
+            console.error('Error adding journeys:', err);
         }
     }
     
@@ -556,31 +681,33 @@
             html += '</tbody></table>';
             
             // Add branches table
-            html += `<h3 style="margin-top:20px; margin-bottom:10px;">Journeys</h3>
-                <table style=\"border-collapse:collapse; font-size:13px; background:#fff; margin-top:6px; width:auto;\">
+            html += `<h3 style="margin-top:20px; margin-bottom:15px; color:#1f2937; font-size:18px; font-weight:600;">Journeys</h3>
+                <table style="border-collapse:collapse; font-size:14px; background:#fff; margin-top:6px; width:100%; border-radius:8px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,0.1);">
                 <thead><tr>
-                    <th style=\"border:1px solid #ccc; padding:3px 8px;\">Journey</th>
-                    <th style=\"border:1px solid #ccc; padding:3px 8px;\">Connection</th>
-                    <th style=\"border:1px solid #ccc; padding:3px 8px;\">Percentage</th>
-                <\/tr><\/thead><tbody>`;
+                    <th style="background:#2563eb; color:#fff; padding:10px 12px; font-weight:600; text-align:left; border-bottom:2px solid #1e40af;">Journey</th>
+                    <th style="background:#2563eb; color:#fff; padding:10px 12px; font-weight:600; text-align:left; border-bottom:2px solid #1e40af;">Connection</th>
+                    <th style="background:#2563eb; color:#fff; padding:10px 12px; font-weight:600; text-align:right; border-bottom:2px solid #1e40af;">Percentage</th>
+                </tr></thead><tbody>`;
                 
             for (const branch of branchesData) {
                 // Main branch
                 const branchName = journeyNamesMap[branch.id] || branch.id;
+                const connectionColor = branch.connection === 'VERY_LIKELY' ? '#16a34a' : branch.connection === 'LIKELY' ? '#2563eb' : '#ea580c';
                 html += '<tr>';
-                html += `<td style="border:1px solid #ccc; padding:3px 8px; font-weight:bold; background:#f7f7e6;">${branchName}</td>`;
-                html += `<td style="border:1px solid #ccc; padding:3px 8px; font-weight:bold; background:#f7f7e6;">${branch.connection}</td>`;
-                html += `<td style="border:1px solid #ccc; padding:3px 8px; font-weight:bold; background:#f7f7e6; text-align:right;">${branch.connectionPercent}%</td>`;
+                html += `<td style="padding:10px 12px; font-weight:600; background:#f0f9ff; border-bottom:1px solid #e5e7eb; color:#1f2937;">${branchName}</td>`;
+                html += `<td style="padding:10px 12px; background:#f0f9ff; border-bottom:1px solid #e5e7eb;"><span style="display:inline-block; padding:2px 8px; background:${connectionColor}; color:#fff; border-radius:12px; font-size:12px; font-weight:500;">${branch.connection.replace('_', ' ')}</span></td>`;
+                html += `<td style="padding:10px 12px; background:#f0f9ff; border-bottom:1px solid #e5e7eb; text-align:right; font-weight:600; color:#1f2937;">${branch.connectionPercent}%</td>`;
                 html += '</tr>';
                 
                 // Communities
                 if (branch.communities && branch.communities.length > 0) {
                     for (const community of branch.communities) {
                         const communityName = journeyNamesMap[community.id] || community.id;
+                        const communityConnectionColor = community.connection === 'VERY_LIKELY' ? '#16a34a' : community.connection === 'LIKELY' ? '#2563eb' : '#ea580c';
                         html += '<tr>';
-                        html += `<td style="border:1px solid #ccc; padding:3px 8px; padding-left:20px;">${communityName}</td>`;
-                        html += `<td style="border:1px solid #ccc; padding:3px 8px;">${community.connection}</td>`;
-                        html += `<td style="border:1px solid #ccc; padding:3px 8px; text-align:right;">${community.connectionPercent}%</td>`;
+                        html += `<td style="padding:8px 12px 8px 36px; background:#fafafa; border-bottom:1px solid #e5e7eb; color:#4b5563; font-style:italic;">└ ${communityName}</td>`;
+                        html += `<td style="padding:8px 12px; background:#fafafa; border-bottom:1px solid #e5e7eb;"><span style="display:inline-block; padding:1px 6px; background:${communityConnectionColor}; color:#fff; border-radius:10px; font-size:11px; font-weight:500;">${community.connection.replace('_', ' ')}</span></td>`;
+                        html += `<td style="padding:8px 12px; background:#fafafa; border-bottom:1px solid #e5e7eb; text-align:right; font-weight:500; color:#4b5563;">${community.connectionPercent}%</td>`;
                         html += '</tr>';
                     }
                 }
