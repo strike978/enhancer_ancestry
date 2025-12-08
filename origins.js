@@ -134,11 +134,15 @@
         };
         
         // Create screenshot button
-        const screenshotBtn = createScreenshotButton(() => {
-            // Find the parent element that contains journeys, buttons, and data
+        const screenshotBtn = createScreenshotButton(async () => {
             const buttonWrapper = document.querySelector('[data-origins-helper="wrapper"]');
-            if (buttonWrapper && buttonWrapper.parentNode) {
-                takeScreenshot(buttonWrapper.parentNode);
+            if (buttonWrapper) {
+                buttonWrapper.style.display = 'none';
+                try {
+                    await takeScreenshot(buttonWrapper.parentNode);
+                } finally {
+                    buttonWrapper.style.display = '';
+                }
             }
         });
         screenshotBtn.style.marginLeft = '0'; // Remove default margin since we're using gap
@@ -784,28 +788,34 @@
             await loadHtml2Canvas();
             console.log('OriginsHelper: html2canvas loaded, capturing...');
             
-            window.html2canvas(targetEl, { 
-                backgroundColor: '#fff',
-                useCORS: true,
-                allowTaint: true
-            }).then(canvas => {
-                console.log('OriginsHelper: Canvas created, opening window...');
-                const dataUrl = canvas.toDataURL('image/png');
-                const win = window.open('', '_blank');
-                if (win) {
-                    win.document.write('<title>Screenshot - OriginsHelper</title><img src="' + dataUrl + '" style="max-width:100%; height:auto;">');
-                    win.document.close();
-                } else {
-                    console.error('OriginsHelper: Failed to open screenshot window - popup blocked?');
-                    alert('Screenshot captured but popup was blocked. Please allow popups for this site.');
-                }
-            }).catch(err => {
-                console.error('OriginsHelper: html2canvas error:', err);
-                alert('Screenshot failed: ' + err.message);
+            return new Promise((resolve, reject) => {
+                window.html2canvas(targetEl, { 
+                    backgroundColor: '#fff',
+                    useCORS: true,
+                    allowTaint: true
+                }).then(canvas => {
+                    console.log('OriginsHelper: Canvas created, opening window...');
+                    const dataUrl = canvas.toDataURL('image/png');
+                    const win = window.open('', '_blank');
+                    if (win) {
+                        win.document.write('<title>Screenshot - OriginsHelper</title><img src="' + dataUrl + '" style="max-width:100%; height:auto;">');
+                        win.document.close();
+                        resolve();
+                    } else {
+                        console.error('OriginsHelper: Failed to open screenshot window - popup blocked?');
+                        alert('Screenshot captured but popup was blocked. Please allow popups for this site.');
+                        reject(new Error('Popup blocked'));
+                    }
+                }).catch(err => {
+                    console.error('OriginsHelper: html2canvas error:', err);
+                    alert('Screenshot failed: ' + err.message);
+                    reject(err);
+                });
             });
         } catch (err) {
             console.error('OriginsHelper: Screenshot setup error:', err);
             alert('Screenshot setup failed: ' + err.message);
+            throw err;
         }
     }
 
