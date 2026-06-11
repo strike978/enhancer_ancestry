@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Enhancer for Ancestry",
+  "version": "1.0",
+  "description": "Enhances AncestryDNA ethnicity pages and compare pages with additional data",
+  "permissions": ["scripting", "webNavigation"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
