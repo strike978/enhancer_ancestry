@@ -21,7 +21,7 @@ A Chrome extension that enhances AncestryDNA pages with a cleaner, data-dense UI
 1. Open Chrome and go to `chrome://extensions`
 2. Enable **Developer mode** (toggle in top-right)
 3. Click **Load unpacked**
-4. Select the `enhancer_ancestry` folder
+4. Select the folder containing `manifest.json`
 5. Navigate to an AncestryDNA page — the extension activates automatically
 
 The toolbar icon shows an **ON** badge when active. Click it to toggle the extension off (reloads the page).
