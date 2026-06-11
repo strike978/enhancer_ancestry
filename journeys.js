@@ -90,8 +90,8 @@
         return buildJourneyList(journeysData, journeyNames, subjourneyNames, true);
     };
 
-    window.buildJourneysPageUI = function(journeysData, journeyNames, subjourneyNames) {
-        const target = document.querySelector('div[data-testid="journeys-results-area"]');
+    window.buildJourneysPageUI = function(journeysData, journeyNames, subjourneyNames, targetEl) {
+        const target = targetEl || document.querySelector('div[data-testid="journeys-results-area"]');
         if (!target) return null;
         const container = buildJourneyList(journeysData, journeyNames, subjourneyNames, false);
         target.innerHTML = '';

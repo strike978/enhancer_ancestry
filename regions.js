@@ -3,11 +3,11 @@
         return k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     }
 
-    window.buildRegionsUI = function(ethnicityData, regionNames) {
+    window.buildRegionsUI = function(ethnicityData, regionNames, targetEl) {
         const id = 'enhancer-ancestry-regions';
         document.querySelector(`#${id}`)?.remove();
 
-        const el = document.querySelector('ul.macroRegions');
+        const el = targetEl || document.querySelector('ul.macroRegions');
         if (!el) return null;
 
         const root = document.createElement('div');
@@ -85,7 +85,12 @@
             root.appendChild(card);
         });
 
-        el.replaceWith(root);
+        if (targetEl) {
+            targetEl.innerHTML = '';
+            targetEl.appendChild(root);
+        } else {
+            el.replaceWith(root);
+        }
         return root;
     };
 })();

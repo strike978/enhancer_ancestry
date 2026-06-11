@@ -13,7 +13,10 @@
     }
 
     function loadLookups() {
-        return new Promise(resolve => chrome.runtime.sendMessage({ type: 'getLookups' }, resolve));
+        return Promise.race([
+            new Promise(resolve => chrome.runtime.sendMessage({ type: 'getLookups' }, resolve)),
+            new Promise(resolve => setTimeout(() => resolve({ regions: { items: [] }, journeys: {} }), 3000))
+        ]);
     }
 
     function buildJourneyData(branches) {
@@ -29,7 +32,7 @@
         }));
     }
 
-    function initRegions(ethnicity, lookups) {
+    function initRegions(ethnicity, lookups, targetEl) {
         const regionsData = lookups?.regions || { items: [] };
         const regionNames = {};
         for (const item of regionsData.items || []) {
@@ -44,10 +47,10 @@
             upperConfidence: r.upperConfidence
         }));
 
-        window.buildRegionsUI({ regions }, regionNames);
+        window.buildRegionsUI({ regions }, regionNames, targetEl);
     }
 
-    function initJourneys(branches, lookups) {
+    function initJourneys(branches, lookups, targetEl) {
         for (const [key, val] of Object.entries(lookups?.journeys || {})) {
             journeyNames[key] = val.name;
             if (val.subjourneys) {
@@ -58,14 +61,29 @@
         }
 
         const journeys = buildJourneyData(branches);
-        window.buildJourneysPageUI(journeys, journeyNames, subjourneyNames);
+        window.buildJourneysPageUI(journeys, journeyNames, subjourneyNames, targetEl);
     }
 
     function run() {
+        // Skip if extension is toggled off
+        chrome.storage.local.get('enabled', data => {
+            if (data.enabled === false) return;
+            doRun();
+        });
+    }
+
+    function doRun() {
         const loc = window.location.href;
         const isRegions = /^https:\/\/www\.ancestry\.[a-z.]+\/dna\/origins\/[^/]+\/regions/.test(loc);
         const isJourneys = /^https:\/\/www\.ancestry\.[a-z.]+\/dna\/origins\/[^/]+\/journeys/.test(loc);
-        if (!isRegions && !isJourneys) return;
+        const isMatchCompare = /^https:\/\/www\.ancestry\.[a-z.]+\/dna\/matches\/([^/]+)\/compare\/([^/]+)/.test(loc);
+
+        if (!isRegions && !isJourneys && !isMatchCompare) return;
+
+        if (isMatchCompare) {
+            initMatchCompare();
+            return;
+        }
 
         document.querySelector('#enhancer-spinner')?.remove();
         document.querySelector('#enhancer-ancestry-regions')?.remove();
@@ -122,6 +140,75 @@
                 placeholder.innerHTML = `<div style="padding:20px;color:#c00;font-family:sans-serif;">Failed to load data. Check console.</div>`;
             });
         }, 800);
+    }
+
+    function initMatchCompare() {
+        const match = window.location.pathname.match(/\/dna\/matches\/([^/]+)\/compare\/([^/]+)/);
+        if (!match) return;
+        const testId = match[1];
+        const matchId = match[2];
+
+        // Replace the ethnicity section with a wrapper that holds both ethnicity and communities divs
+        let attempts = 0;
+        const interval = setInterval(() => {
+            attempts++;
+            if (attempts > 30) { clearInterval(interval); return; }
+
+            const es = document.querySelector('section.ethnicityComparisonChart.flex-1.w-100');
+            if (es && !document.getElementById('enhancer-compare-wrapper')) {
+                const wrapper = document.createElement('div');
+                wrapper.id = 'enhancer-compare-wrapper';
+
+                const ethDiv = document.createElement('div');
+                ethDiv.id = 'enhancer-compare-ethnicity';
+                ethDiv.style.cssText = 'margin:16px 0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;';
+                ethDiv.innerHTML = spinnerHTML();
+
+                const comDiv = document.createElement('div');
+                comDiv.id = 'enhancer-compare-communities';
+                comDiv.style.cssText = 'margin:16px 0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;';
+                comDiv.innerHTML = spinnerHTML();
+
+                wrapper.appendChild(ethDiv);
+                wrapper.appendChild(comDiv);
+                es.parentNode?.replaceChild(wrapper, es);
+            }
+
+            if (document.getElementById('enhancer-compare-wrapper')) {
+                clearInterval(interval);
+                setTimeout(() => {
+                    const ethnicityEl = document.getElementById('enhancer-compare-ethnicity');
+                    const communitiesEl = document.getElementById('enhancer-compare-communities');
+
+                    // Fetch lookups + ethnicity, then 1s delay, then communities
+                    loadLookups().then(lookups => {
+                        fetch(`${window.location.origin}/dna/origins/secure/compare/${testId}/batchEthnicity`, {
+                            method: 'PUT', credentials: 'include',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify([matchId])
+                        }).then(r => {
+                            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                            return r.json().then(j => { const inner = j[Object.keys(j)[0]]; return inner.regions || []; });
+                        }).then(regions => {
+                            if (ethnicityEl) initRegions({ regions }, lookups, ethnicityEl);
+                            // Wait 1s then fetch communities
+                            setTimeout(() => {
+                                fetch(`${window.location.origin}/dna/origins/secure/compare/${testId}/batchCommunities`, {
+                                    method: 'POST', credentials: 'include',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify([matchId])
+                                }).then(r => {
+                                    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                                    return r.json().then(j => { const inner = j[Object.keys(j)[0]]; return inner.branches || []; });
+                                }).then(branches => {
+                                    if (communitiesEl) initJourneys(branches, lookups, communitiesEl);
+                                }).catch(err => console.error('[EA] communities fetch failed:', err.message));
+                            }, 1000);
+                        }).catch(err => console.error('[EA] ethnicity fetch failed:', err.message));
+                    });
+                }, 800);
+            }
+        }, 500);
     }
 
     run();

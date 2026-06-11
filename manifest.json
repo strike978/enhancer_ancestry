@@ -3,9 +3,12 @@
   "name": "Enhancer for Ancestry",
   "version": "1.0",
   "description": "Enhances AncestryDNA ethnicity pages and compare pages with additional data",
-  "permissions": ["scripting", "webNavigation"],
+  "permissions": ["scripting", "webNavigation", "storage"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Toggle Enhancer for Ancestry"
   }
 }
