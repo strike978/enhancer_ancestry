@@ -161,16 +161,22 @@
 
                 const ethDiv = document.createElement('div');
                 ethDiv.id = 'enhancer-compare-ethnicity';
-                ethDiv.style.cssText = 'margin:16px 0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;';
+                ethDiv.style.cssText = 'margin:0 0 16px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;';
                 ethDiv.innerHTML = spinnerHTML();
 
+                const comSection = document.createElement('div');
+                const comHeading = document.createElement('h3');
+                comHeading.textContent = 'Ancestral journeys';
+                comHeading.style.cssText = 'margin:0 0 8px;font-size:18px;font-weight:600;color:#333;';
+                comSection.appendChild(comHeading);
                 const comDiv = document.createElement('div');
                 comDiv.id = 'enhancer-compare-communities';
-                comDiv.style.cssText = 'margin:16px 0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;';
+                comDiv.style.cssText = 'margin:0 0 16px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;';
                 comDiv.innerHTML = spinnerHTML();
+                comSection.appendChild(comDiv);
 
                 wrapper.appendChild(ethDiv);
-                wrapper.appendChild(comDiv);
+                wrapper.appendChild(comSection);
                 es.parentNode?.replaceChild(wrapper, es);
             }
 
